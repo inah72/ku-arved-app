@@ -1,124 +1,137 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-st.set_page_config(page_title="KÜ Arvete Jaotaja", layout="wide")
+st.set_page_config(page_title="KÜ Arvete Kalkulaator", layout="wide")
 
-st.title("🏢 Korteriühistu Arvete Jaotaja (18 korterit)")
-st.write(
-    "Sisesta üldarved ja korterite näidud ning arvuta iga korteri makseosa."
-)
+st.title("🏢 Korteriühistu arvete ja veenäitude kalkulaator")
 
-default_korterid = [
-    {"nr": i, "pindala_m2": 50.0, "kulm_vesi_m3": 3.0, "soe_vesi_m3": 1.5}
-    for i in range(1, 19)
-]
+# ---------------------------------------------------------
+# 1. SISEND: Üldarved ja üldmõõdiku andmed
+# ---------------------------------------------------------
+st.header("1. Üldarved ja ühistu üldnäidud")
 
-col1, col2 = st.columns([1, 2])
+col1, col2, col3 = st.columns(3)
 
 with col1:
-  st.subheader("1. Üldarved (EUR)")
-  kute_eur = st.number_input("Küte (€)", value=850.00, step=10.0)
-  remondifond_eur = st.number_input("Remondifond (€)", value=300.00, step=10.0)
-  haldus_eur = st.number_input("Haldustasu (€)", value=150.00, step=5.0)
-  prygi_eur = st.number_input("Prügivedu (€)", value=120.00, step=5.0)
-  uldelekter_eur = st.number_input("Üldelekter (€)", value=45.00, step=5.0)
-
-  st.subheader("2. Vee hinnad")
-  kulm_vesi_m3_hind = st.number_input("Külm vesi (€/m³)", value=2.50, step=0.1)
-  soe_vesi_soojendus_eur = st.number_input(
-      "Sooja vee soojendamine kokku (€)", value=180.00, step=10.0
-  )
+    st.subheader("💧 Külm vesi (Üldarve)")
+    yld_kv_m3 = st.number_input("Üldmõõdiku tarbimine kokku (m³)", min_value=0.0, value=100.0, step=1.0)
+    yld_kv_euro = st.number_input("Külma vee üldarve summa (€)", min_value=0.0, value=250.0, step=0.01)
 
 with col2:
-  st.subheader("3. Korterite pindalad ja näidud")
-  df_input = pd.DataFrame(default_korterid)
+    st.subheader("🔥 Sooja vee soojendamine")
+    yld_sv_soojendamis_euro = st.number_input("Soojendamise arve summa (€)", min_value=0.0, value=150.0, step=0.01)
 
-  edited_df = st.data_editor(
-      df_input,
-      num_rows="fixed",
-      column_config={
-          "nr": st.column_config.NumberColumn("Krt nr", disabled=True),
-          "pindala_m2": st.column_config.NumberColumn(
-              "Pindala (m²)", format="%.1f m²"
-          ),
-          "kulm_vesi_m3": st.column_config.NumberColumn(
-              "Külm vesi (m³)", format="%.1f m³"
-          ),
-          "soe_vesi_m3": st.column_config.NumberColumn(
-              "Soe vesi (m³)", format="%.1f m³"
-          ),
-      },
-      hide_index=True,
-      use_container_width=True,
-  )
+with col3:
+    st.subheader("🏠 Üldkulud (pindala järgi)")
+    yldkulu_euro = st.number_input("Muud üldkulud kokku (€)", min_value=0.0, value=300.0, step=0.01)
 
-st.divider()
+# ---------------------------------------------------------
+# 2. SISEND: Korterite veenäidud ja pindalad (18 korterit)
+# ---------------------------------------------------------
+st.header("2. Korterite igakuised veenäidud ja andmed")
 
-if st.button("🚀 Arvuta korterite arved", type="primary"):
-  korterid = edited_df.to_dict("records")
+if "korterid_df" not in st.session_state:
+    # Vaikimisi algandmed 18 korteri jaoks
+    data = {
+        "Korter": [f"Krt {i}" for i in range(1, 19)],
+        "Pindala (m²)": [50.0] * 18,
+        "KV eelmine näit": [100.0] * 18,
+        "KV uus näit": [105.0] * 18,
+        "SV eelmine näit": [50.0] * 18,
+        "SV uus näit": [53.0] * 18,
+    }
+    st.session_state.korterid_df = pd.DataFrame(data)
 
-  kokku_pindala = sum(k["pindala_m2"] for k in korterid)
-  korterite_arv = len(korterid)
-  kokku_soe_vesi = sum(k["soe_vesi_m3"] for k in korterid)
+st.write("Märgi tabelisse iga korteri eelmine ja uus näit ning pindala:")
+edited_df = st.data_editor(st.session_state.korterid_df, num_rows="fixed", use_container_width=True)
 
-  kute_m2 = kute_eur / kokku_pindala if kokku_pindala > 0 else 0
-  remondifond_m2 = remondifond_eur / kokku_pindala if kokku_pindala > 0 else 0
-  haldus_m2 = haldus_eur / kokku_pindala if kokku_pindala > 0 else 0
+# ---------------------------------------------------------
+# 3. ARVUTUSED
+# ---------------------------------------------------------
 
-  prygi_krt = prygi_eur / korterite_arv if korterite_arv > 0 else 0
-  uldelekter_krt = uldelekter_eur / korterite_arv if korterite_arv > 0 else 0
+# Tarbimiste arvutamine (Uus näit - Eelmine näit)
+edited_df["KV tarbimine (m³)"] = (edited_df["KV uus näit"] - edited_df["KV eelmine näit"]).clip(lower=0)
+edited_df["SV tarbimine (m³)"] = (edited_df["SV uus näit"] - edited_df["SV eelmine näit"]).clip(lower=0)
+edited_df["Vesi kokku (m³)"] = edited_df["KV tarbimine (m³)"] + edited_df["SV tarbimine (m³)"]
 
-  soe_soojendus_m3_hind = (
-      soe_vesi_soojendus_eur / kokku_soe_vesi if kokku_soe_vesi > 0 else 0
-  )
+# Summaarsed näitajad
+kokku_korterite_kv = edited_df["KV tarbimine (m³)"].sum()
+kokku_korterite_sv = edited_df["SV tarbimine (m³)"].sum()
+kokku_korterite_vesi = edited_df["Vesi kokku (m³)"].sum()
+kokku_pindala = edited_df["Pindala (m²)"].sum()
 
-  tulemused = []
-  for k in korterid:
-    kute = k["pindala_m2"] * kute_m2
-    remondi = k["pindala_m2"] * remondifond_m2
-    haldus = k["pindala_m2"] * haldus_m2
+# Veekadu (Üldmõõdik vs korterite summeeritud tarbimine)
+veekadu_m3 = max(0.0, yld_kv_m3 - kokku_korterite_vesi)
 
-    prygi = prygi_krt
-    uldelekter = uldelekter_krt
+# Ühikuhinnad
+kv_yhikuhind = yld_kv_euro / yld_kv_m3 if yld_kv_m3 > 0 else 0.0
+sv_soojenduse_yhikuhind = yld_sv_soojendamis_euro / kokku_korterite_sv if kokku_korterite_sv > 0 else 0.0
+yldkulu_ruutmeetri_hind = yldkulu_euro / kokku_pindala if kokku_pindala > 0 else 0.0
 
-    kulm_vesi_eur = k["kulm_vesi_m3"] * kulm_vesi_m3_hind
-    soe_vesi_vesi_eur = k["soe_vesi_m3"] * kulm_vesi_m3_hind
-    soe_vesi_soojendus_eur_krt = k["soe_vesi_m3"] * soe_soojendus_m3_hind
-    soe_vesi_kokku_eur = soe_vesi_vesi_eur + soe_vesi_soojendus_eur_krt
+# Veekao maksumus ja jagamine korterite vahel (proportsionaalselt tarbimisele)
+veekao_kokku_euro = veekadu_m3 * kv_yhikuhind
 
-    summa = (
-        kute
-        + remondi
-        + haldus
-        + prygi
-        + uldelekter
-        + kulm_vesi_eur
-        + soe_vesi_kokku_eur
-    )
+# Korteripõhised summad (€)
+edited_df["Külm vesi (€)"] = edited_df["KV tarbimine (m³)"] * kv_yhikuhind
+edited_df["Soe vesi (€)"] = edited_df["SV tarbimine (m³)"] * (kv_yhikuhind + sv_soojenduse_yhikuhind)
 
-    tulemused.append({
-        "Krt nr": int(k["nr"]),
-        "Pindala (m²)": round(k["pindala_m2"], 1),
-        "Küte (€)": round(kute, 2),
-        "Remondifond (€)": round(remondi, 2),
-        "Haldus (€)": round(haldus, 2),
-        "Prügi (€)": round(prygi, 2),
-        "Üldelekter (€)": round(uldelekter, 2),
-        "Külm vesi (€)": round(kulm_vesi_eur, 2),
-        "Soe vesi (€)": round(soe_vesi_kokku_eur, 2),
-        "KOKKU (€)": round(summa, 2),
-    })
+# Veekao jagamine tarbitud m³ alusel
+if kokku_korterite_vesi > 0:
+    edited_df["Veekadu (€)"] = (edited_df["Vesi kokku (m³)"] / kokku_korterite_vesi) * veekao_kokku_euro
+else:
+    edited_df["Veekadu (€)"] = 0.0
 
-  res_df = pd.DataFrame(tulemused)
+# Üldkulud pindala järgi
+edited_df["Üldkulud (€)"] = edited_df["Pindala (m²)"] * yldkulu_ruutmeetri_hind
 
-  st.subheader("📊 Arvutuse tulemused")
-  st.dataframe(res_df, use_container_width=True, hide_index=True)
+# Lõppsumma korteri kohta
+edited_df["KOKKU ARVE (€)"] = (
+    edited_df["Külm vesi (€)"] 
+    + edited_df["Soe vesi (€)"] 
+    + edited_df["Veekadu (€)"] 
+    + edited_df["Üldkulud (€)"]
+)
 
-  # CSV allalaadimine
-  csv = res_df.to_csv(index=False).encode("utf-8")
-  st.download_button(
-      label="📥 Lae tulemused alla CSV failina",
-      data=csv,
-      file_name="ku_arved_tulemus.csv",
-      mime="text/csv",
-  )
+# ---------------------------------------------------------
+# 4. TULEMUSTE KUVMINE
+# ---------------------------------------------------------
+st.header("3. Koondandmed ja tariifid")
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Külma vee hind", f"{kv_yhikuhind:.3f} €/m³")
+m2.metric("Soojendamise hind", f"{sv_soojenduse_yhikuhind:.3f} €/m³")
+m3.metric("Tuvastatud veekadu", f"{veekadu_m3:.2f} m³", f"{veekao_kokku_euro:.2f} €")
+m4.metric("Üldkulu ruutmeetrile", f"{yldkulu_ruutmeetri_hind:.3f} €/m²")
+
+st.header("4. Korterite lõplikud arved")
+
+# Tulemuste tabeli valikuline kuvamine
+tulemused_df = edited_df[[
+    "Korter", "Pindala (m²)", 
+    "KV tarbimine (m³)", "SV tarbimine (m³)", 
+    "Külm vesi (€)", "Soe vesi (€)", "Veekadu (€)", "Üldkulud (€)", 
+    "KOKKU ARVE (€)"
+]]
+
+st.dataframe(
+    tulemused_df.style.format({
+        "Pindala (m²)": "{:.1f}",
+        "KV tarbimine (m³)": "{:.2f}",
+        "SV tarbimine (m³)": "{:.2f}",
+        "Külm vesi (€)": "{:.2f}",
+        "Soe vesi (€)": "{:.2f}",
+        "Veekadu (€)": "{:.2f}",
+        "Üldkulud (€)": "{:.2f}",
+        "KOKKU ARVE (€)": "{:.2f}",
+    }),
+    use_container_width=True
+)
+
+# CSV allalaadimise nupp
+csv = tulemused_df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Laadi arvutuste tulemused alla (CSV)",
+    data=csv,
+    file_name="ku_arved_tulemused.csv",
+    mime="text/csv",
+)
